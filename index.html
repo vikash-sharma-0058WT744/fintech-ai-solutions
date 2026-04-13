@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FintechAISolutions - Term Loan Teaser Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.8.2/docx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <h1>🏦 FintechAISolutions</h1>
+                <p class="tagline">AI-Powered Financial Document Generation</p>
+            </div>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="upload-card">
+                <h2>📊 Upload Excel File</h2>
+                <p>Upload your data arrangement Excel file to generate a professional term loan teaser</p>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+                    <div class="upload-content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p class="upload-text">Click to upload or drag and drop</p>
+                        <p class="upload-subtext">Excel files (.xlsx, .xls)</p>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="uploadBtn">
+                    <span>📁 Choose File</span>
+                </button>
+                <div id="fileName" class="file-name"></div>
+            </div>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Processing your data...</p>
+        </div>
+
+        <!-- Data Display Section -->
+        <section id="dataSection" class="data-section" style="display: none;">
+            <!-- Company Overview -->
+            <div class="data-card">
+                <h2>🏢 Company Overview</h2>
+                <div class="company-info" id="companyInfo"></div>
+            </div>
+
+            <!-- Key Metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Rating</h3>
+                    <div class="metric-value" id="ratingValue">-</div>
+                    <div class="metric-label">Credit Rating</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Directors</h3>
+                    <div class="metric-value" id="directorsCount">-</div>
+                    <div class="metric-label">Board Members</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Net Worth</h3>
+                    <div class="metric-value" id="netWorth">-</div>
+                    <div class="metric-label">Rs. in Crores (FY25)</div>
+                </div>
+                <div class="metric-card">
+                    <h3>Total Debt</h3>
+                    <div class="metric-value" id="totalDebt">-</div>
+                    <div class="metric-label">Rs. in Crores</div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-section">
+                <div class="chart-card">
+                    <h3>📈 Financial Performance (FY22-FY25)</h3>
+                    <canvas id="financialChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>🥧 Shareholding Pattern</h3>
+                    <canvas id="shareholdingChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Debt Profile Chart -->
+            <div class="chart-card full-width">
+                <h3>💰 Debt Profile by Category</h3>
+                <canvas id="debtChart"></canvas>
+            </div>
+
+            <!-- Directors Table -->
+            <div class="data-card">
+                <h2>👥 Board of Directors</h2>
+                <div class="table-container">
+                    <table id="directorsTable" class="data-table"></table>
+                </div>
+            </div>
+
+            <!-- Shareholding Table -->
+            <div class="data-card">
+                <h2>📊 Shareholding Pattern</h2>
+                <div class="table-container">
+                    <table id="shareholdingTable" class="data-table"></table>
+                </div>
+            </div>
+
+            <!-- Key Strengths -->
+            <div class="data-card">
+                <h2>⭐ Key Strengths</h2>
+                <div id="keyStrengths" class="strengths-list"></div>
+            </div>
+
+            <!-- Debt Profile Tables -->
+            <div class="data-card">
+                <h2>💼 Debt Profile Details</h2>
+                <div id="debtTables"></div>
+            </div>
+
+            <!-- Download Section -->
+            <div class="download-section">
+                <button class="btn btn-success btn-large" id="downloadBtn">
+                    <span>📥 Download Term Loan Teaser (DOCX)</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 FintechAISolutions. All rights reserved.</p>
+            <p>Powered by AI for Financial Document Generation</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
