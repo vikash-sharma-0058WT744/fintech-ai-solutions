@@ -75,7 +75,9 @@ function handleFileSelect(event) {
 // Process Excel data
 function processExcelData(workbook) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+    console.log('Raw Excel Data:', jsonData);
 
     extractedData = {
         companyName: '',
@@ -96,141 +98,144 @@ function processExcelData(workbook) {
     };
 
     // Parse data (Column B = headings, Column C = data)
-    for (let i = 2; i < jsonData.length; i++) {
-        const heading = jsonData[i][1];
-        const data = jsonData[i][2];
+    let currentSection = '';
+    let i = 0;
+    
+    while (i < jsonData.length) {
+        const row = jsonData[i];
+        const heading = row[1] ? String(row[1]).trim() : '';
+        const data = row[2] ? String(row[2]).trim() : '';
 
-        if (!heading) continue;
+        console.log(`Row ${i}: Heading="${heading}", Data="${data}"`);
 
-        const headingStr = String(heading).trim();
-
-        if (headingStr === 'Applicant Company') {
-            // Will be extracted from About Company
-        } else if (headingStr === 'CIN NO') {
-            extractedData.cin = data || '';
-        } else if (headingStr === 'PAN No') {
-            extractedData.pan = data || '';
-        } else if (headingStr === 'Date of Incorporation') {
+        if (heading === 'Applicant Company') {
+            currentSection = 'company';
+            i++;
+        } else if (heading === 'CIN NO') {
+            extractedData.cin = data;
+            i++;
+        } else if (heading === 'PAN No') {
+            extractedData.pan = data;
+            i++;
+        } else if (heading === 'Date of Incorporation') {
             extractedData.incorporationDate = formatDate(data);
-        } else if (headingStr === 'Registered and  Corporate  Office') {
-            extractedData.officeAddress = data || '';
-        } else if (headingStr === 'Line of Activity') {
-            extractedData.activity = data || '';
-        } else if (headingStr === 'Rating') {
-            extractedData.rating = parseRating(data);
-        } else if (headingStr === 'Board of Directors') {
-            extractedData.directors = parseDirectors(data);
-        } else if (headingStr === 'Shareholding Pattern') {
-            extractedData.shareholding = parseShareholding(data);
-        } else if (headingStr === 'Key Strengths') {
-            extractedData.keyStrengths = data || '';
-        } else if (headingStr === 'About the Company') {
-            extractedData.aboutCompany = data || '';
-            // Extract company name
+            i++;
+        } else if (heading === 'Registered and  Corporate  Office') {
+            extractedData.officeAddress = data;
+            i++;
+        } else if (heading === 'Line of Activity') {
+            extractedData.activity = data;
+            i++;
+        } else if (heading === 'Rating') {
+            currentSection = 'rating';
+            i++;
+            // Parse rating rows
+            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
+                const ratingRow = jsonData[i];
+                if (ratingRow[1] && String(ratingRow[1]).includes('Long Term')) {
+                    extractedData.rating.push({
+                        instrument: String(ratingRow[1] || '').trim(),
+                        amount: String(ratingRow[2] || '').trim(),
+                        rating: String(ratingRow[3] || '').trim(),
+                        action: String(ratingRow[4] || '').trim()
+                    });
+                }
+                i++;
+            }
+        } else if (heading === 'Board of Directors') {
+            currentSection = 'directors';
+            i++;
+            // Parse director rows
+            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
+                const dirRow = jsonData[i];
+                const name = String(dirRow[1] || '').trim();
+                if (name && (name.startsWith('Mr.') || name.startsWith('Ms.'))) {
+                    extractedData.directors.push({
+                        name: name,
+                        din: String(dirRow[2] || '').trim(),
+                        designation: String(dirRow[3] || '').trim()
+                    });
+                }
+                i++;
+            }
+        } else if (heading === 'Shareholding Pattern') {
+            currentSection = 'shareholding';
+            i++;
+            // Parse shareholding rows
+            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
+                const shRow = jsonData[i];
+                const category = String(shRow[1] || '').trim();
+                if (category && category !== 'Category of Shareholder' && category !== 'TOTAL') {
+                    extractedData.shareholding.push({
+                        category: category,
+                        shares: String(shRow[2] || '').trim(),
+                        percentage: String(shRow[3] || '').trim()
+                    });
+                }
+                i++;
+            }
+        } else if (heading === 'Key Strengths') {
+            extractedData.keyStrengths = data;
+            i++;
+        } else if (heading === 'About the Company') {
+            extractedData.aboutCompany = data;
+            // Extract company name from about section
             if (data && data.includes('(')) {
                 extractedData.companyName = data.split('(')[0].trim();
             }
-        } else if (headingStr === 'Director & Promoter Profile') {
-            extractedData.directorProfiles = data || '';
-        } else if (headingStr.startsWith('Financials')) {
-            extractedData.financials = parseFinancials(data);
+            i++;
+        } else if (heading === 'Director & Promoter Profile') {
+            extractedData.directorProfiles = data;
+            i++;
+        } else if (heading.includes('Financials')) {
+            currentSection = 'financials';
+            i++;
+            // Parse financial data
+            if (i < jsonData.length) {
+                const headerRow = jsonData[i];
+                // Extract year headers (FY 22, FY 23, etc.)
+                for (let j = 2; j < headerRow.length; j++) {
+                    if (headerRow[j]) {
+                        extractedData.financials.headers.push(String(headerRow[j]).trim());
+                    }
+                }
+                i++;
+                
+                // Parse financial rows
+                while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
+                    const finRow = jsonData[i];
+                    const particular = String(finRow[1] || '').trim();
+                    if (particular && particular !== 'Particulars') {
+                        extractedData.financials.data[particular] = {};
+                        for (let j = 0; j < extractedData.financials.headers.length; j++) {
+                            extractedData.financials.data[particular][extractedData.financials.headers[j]] = String(finRow[j + 2] || '').trim();
+                        }
+                    }
+                    i++;
+                }
+            }
+        } else {
+            i++;
         }
     }
+
+    console.log('Extracted Data:', extractedData);
 
     // Display data
     displayData();
 }
 
-// Parse rating data
-function parseRating(data) {
-    if (!data) return [];
-    const lines = String(data).split('\n');
-    const ratings = [];
-    for (const line of lines) {
-        if (line.includes('Long Term')) {
-            const parts = line.split('\t');
-            if (parts.length >= 4) {
-                ratings.push({
-                    instrument: parts[0].trim(),
-                    amount: parts[1].trim(),
-                    rating: parts[2].trim(),
-                    action: parts[3].trim()
-                });
-            }
-        }
-    }
-    return ratings;
-}
-
-// Parse directors data
-function parseDirectors(data) {
-    if (!data) return [];
-    const lines = String(data).split('\n');
-    const directors = [];
-    for (const line of lines) {
-        if (line.startsWith('Mr.') || line.startsWith('Ms.')) {
-            const parts = line.split('\t');
-            if (parts.length >= 3) {
-                directors.push({
-                    name: parts[0].trim(),
-                    din: parts[1].trim(),
-                    designation: parts[2].trim()
-                });
-            }
-        }
-    }
-    return directors;
-}
-
-// Parse shareholding data
-function parseShareholding(data) {
-    if (!data) return [];
-    const lines = String(data).split('\n');
-    const shareholding = [];
-    for (const line of lines) {
-        const parts = line.split('\t');
-        if (parts.length >= 3 && !line.includes('Category of Shareholder') && !line.includes('TOTAL')) {
-            const category = parts[0].trim();
-            if (category) {
-                shareholding.push({
-                    category: category,
-                    shares: parts[1].trim(),
-                    percentage: parts[2].trim()
-                });
-            }
-        }
-    }
-    return shareholding;
-}
-
-// Parse financials data
-function parseFinancials(data) {
-    if (!data) return { headers: [], data: {} };
-    const lines = String(data).split('\n');
-    const headers = [];
-    const financialData = {};
-
-    if (lines.length > 0) {
-        const headerParts = lines[0].split('\t');
-        for (let i = 1; i < headerParts.length; i++) {
-            if (headerParts[i]) headers.push(headerParts[i].trim());
-        }
-    }
-
-    for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split('\t');
-        if (parts.length > 1) {
-            const key = parts[0].trim();
-            if (key && key !== 'Particulars') {
-                financialData[key] = {};
-                for (let j = 0; j < headers.length; j++) {
-                    financialData[key][headers[j]] = parts[j + 1] || '';
-                }
-            }
-        }
-    }
-
-    return { headers, data: financialData };
+// Check if a heading is a new section
+function isNewSection(heading) {
+    const sections = [
+        'Applicant Company', 'CIN NO', 'PAN No', 'Date of Incorporation',
+        'Registered and  Corporate  Office', 'Line of Activity', 'Rating',
+        'Board of Directors', 'Shareholding Pattern', 'Key Strengths',
+        'About the Company', 'Director & Promoter Profile', 'Financials',
+        'Portfolio Cuts', 'Debt Profile'
+    ];
+    const headingStr = String(heading).trim();
+    return sections.some(section => headingStr.includes(section));
 }
 
 // Format date
@@ -424,21 +429,19 @@ function displayFinancialChart() {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'top',
-                },
-                title: {
-                    display: false
-                }
-            },
             scales: {
                 y: {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Amount (Rs. in Crores)'
+                        text: 'Amount (in Crores)'
                     }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
             }
         }
@@ -549,18 +552,19 @@ function displayDebtChart() {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'top',
-                }
-            },
             scales: {
                 y: {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Amount (Rs. in Crores)'
+                        text: 'Amount (in Crores)'
                     }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
             }
         }
@@ -582,15 +586,23 @@ function displayTables() {
         <tbody>
     `;
     
-    extractedData.directors.forEach(director => {
+    if (extractedData.directors.length === 0) {
         directorsHTML += `
             <tr>
-                <td>${director.name}</td>
-                <td>${director.din}</td>
-                <td>${director.designation}</td>
+                <td colspan="3" style="text-align: center;">No director data available</td>
             </tr>
         `;
-    });
+    } else {
+        extractedData.directors.forEach(director => {
+            directorsHTML += `
+                <tr>
+                    <td>${director.name}</td>
+                    <td>${director.din}</td>
+                    <td>${director.designation}</td>
+                </tr>
+            `;
+        });
+    }
     
     directorsHTML += '</tbody>';
     directorsTable.innerHTML = directorsHTML;
@@ -608,15 +620,23 @@ function displayTables() {
         <tbody>
     `;
     
-    extractedData.shareholding.forEach(sh => {
+    if (extractedData.shareholding.length === 0) {
         shareholdingHTML += `
             <tr>
-                <td>${sh.category}</td>
-                <td>${sh.shares}</td>
-                <td>${sh.percentage}</td>
+                <td colspan="3" style="text-align: center;">No shareholding data available</td>
             </tr>
         `;
-    });
+    } else {
+        extractedData.shareholding.forEach(sh => {
+            shareholdingHTML += `
+                <tr>
+                    <td>${sh.category}</td>
+                    <td>${sh.shares}</td>
+                    <td>${sh.percentage}</td>
+                </tr>
+            `;
+        });
+    }
     
     shareholdingHTML += '</tbody>';
     shareholdingTable.innerHTML = shareholdingHTML;
@@ -625,6 +645,12 @@ function displayTables() {
 // Display key strengths
 function displayKeyStrengths() {
     const strengthsDiv = document.getElementById('keyStrengths');
+    
+    if (!extractedData.keyStrengths) {
+        strengthsDiv.innerHTML = '<p>No key strengths data available</p>';
+        return;
+    }
+    
     const strengths = extractedData.keyStrengths.split('•').filter(s => s.trim());
     
     let html = '';
@@ -639,7 +665,7 @@ function displayKeyStrengths() {
         }
     });
     
-    strengthsDiv.innerHTML = html;
+    strengthsDiv.innerHTML = html || '<p>No key strengths data available</p>';
 }
 
 // Display debt profile
@@ -649,11 +675,11 @@ function displayDebtProfile() {
     
     const categories = [
         { key: 'termLoan', title: 'Term Loan' },
-        { key: 'ptc', title: 'PTC' },
-        { key: 'da', title: 'DA (Direct Assignment)' },
+        { key: 'ptc', title: 'Pass Through Certificate (PTC)' },
+        { key: 'da', title: 'Direct Assignment (DA)' },
         { key: 'nhb', title: 'NHB Refinance' },
-        { key: 'ecb', title: 'ECB (External Commercial Borrowing)' },
-        { key: 'ncd', title: 'NCD (Non-Convertible Debentures)' }
+        { key: 'ecb', title: 'External Commercial Borrowing (ECB)' },
+        { key: 'ncd', title: 'Non-Convertible Debentures (NCD)' }
     ];
     
     let html = '';
@@ -661,21 +687,18 @@ function displayDebtProfile() {
     categories.forEach(category => {
         if (debt[category.key] && debt[category.key].length > 0) {
             html += `
-                <div class="debt-category">
-                    <div class="debt-category-header">${category.title}</div>
-                    <table class="debt-category-table">
+                <div class="debt-table-container">
+                    <h3>${category.title}</h3>
+                    <table class="debt-table">
                         <thead>
                             <tr>
-                                <th>Lender Name</th>
-                                <th>Sanctioned Amt</th>
-                                <th>Outstanding Amt</th>
+                                <th>Lender</th>
+                                <th>Sanctioned (₹ Cr)</th>
+                                <th>Outstanding (₹ Cr)</th>
                             </tr>
                         </thead>
                         <tbody>
             `;
-            
-            let totalSanctioned = 0;
-            let totalOutstanding = 0;
             
             debt[category.key].forEach(item => {
                 html += `
@@ -685,19 +708,12 @@ function displayDebtProfile() {
                         <td>${item.outstanding}</td>
                     </tr>
                 `;
-                totalSanctioned += parseFloat(item.sanctioned.replace(/,/g, '')) || 0;
-                totalOutstanding += parseFloat(item.outstanding.replace(/,/g, '')) || 0;
             });
             
             html += `
-                    <tr class="debt-total">
-                        <td>TOTAL</td>
-                        <td>${totalSanctioned.toFixed(2)}</td>
-                        <td>${totalOutstanding.toFixed(2)}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
     });
@@ -708,106 +724,113 @@ function displayDebtProfile() {
 // Generate DOCX
 async function generateDocx() {
     if (!extractedData) {
-        alert('Please upload an Excel file first');
+        alert('Please upload and process an Excel file first.');
         return;
     }
 
     try {
-        const doc = new docx.Document({
+        const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } = docx;
+
+        // Create document
+        const doc = new Document({
             sections: [{
                 properties: {},
                 children: [
                     // Title
-                    new docx.Paragraph({
-                        text: "Term Loan Teaser",
-                        heading: docx.HeadingLevel.TITLE,
-                        alignment: docx.AlignmentType.CENTER,
+                    new Paragraph({
+                        text: 'Term Loan Teaser',
+                        heading: HeadingLevel.HEADING_1,
+                        alignment: AlignmentType.CENTER,
                         spacing: { after: 400 }
                     }),
-                    
+
                     // Company Name
-                    new docx.Paragraph({
-                        text: extractedData.companyName || "Company Name",
-                        heading: docx.HeadingLevel.HEADING_1,
-                        alignment: docx.AlignmentType.CENTER,
+                    new Paragraph({
+                        text: extractedData.companyName || 'Company Name',
+                        heading: HeadingLevel.HEADING_2,
+                        alignment: AlignmentType.CENTER,
                         spacing: { after: 400 }
                     }),
-                    
-                    // Executive Summary
-                    new docx.Paragraph({
-                        text: "Executive Summary",
-                        heading: docx.HeadingLevel.HEADING_2,
+
+                    // Company Information
+                    new Paragraph({
+                        text: 'Company Information',
+                        heading: HeadingLevel.HEADING_2,
                         spacing: { before: 400, after: 200 }
                     }),
-                    
-                    new docx.Paragraph({
-                        text: `Company: ${extractedData.companyName}`,
+
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: 'CIN: ', bold: true }),
+                            new TextRun(extractedData.cin || 'N/A')
+                        ],
                         spacing: { after: 100 }
                     }),
-                    new docx.Paragraph({
-                        text: `CIN: ${extractedData.cin}`,
+
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: 'PAN: ', bold: true }),
+                            new TextRun(extractedData.pan || 'N/A')
+                        ],
                         spacing: { after: 100 }
                     }),
-                    new docx.Paragraph({
-                        text: `PAN: ${extractedData.pan}`,
+
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: 'Date of Incorporation: ', bold: true }),
+                            new TextRun(extractedData.incorporationDate || 'N/A')
+                        ],
                         spacing: { after: 100 }
                     }),
-                    new docx.Paragraph({
-                        text: `LEI: ${extractedData.lei}`,
+
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: 'Line of Activity: ', bold: true }),
+                            new TextRun(extractedData.activity || 'N/A')
+                        ],
                         spacing: { after: 100 }
                     }),
-                    new docx.Paragraph({
-                        text: `Date of Incorporation: ${extractedData.incorporationDate}`,
-                        spacing: { after: 100 }
-                    }),
-                    new docx.Paragraph({
-                        text: `Office: ${extractedData.officeAddress}`,
-                        spacing: { after: 100 }
-                    }),
-                    new docx.Paragraph({
-                        text: `Activity: ${extractedData.activity}`,
+
+                    new Paragraph({
+                        children: [
+                            new TextRun({ text: 'Rating: ', bold: true }),
+                            new TextRun(extractedData.rating.length > 0 ? extractedData.rating[0].rating : 'N/A')
+                        ],
                         spacing: { after: 400 }
                     }),
-                    
-                    // About Company
-                    new docx.Paragraph({
-                        text: "About the Company",
-                        heading: docx.HeadingLevel.HEADING_2,
-                        spacing: { before: 400, after: 200 }
-                    }),
-                    new docx.Paragraph({
-                        text: extractedData.aboutCompany || "",
-                        spacing: { after: 400 }
-                    }),
-                    
+
                     // Key Strengths
-                    new docx.Paragraph({
-                        text: "Key Strengths",
-                        heading: docx.HeadingLevel.HEADING_2,
+                    new Paragraph({
+                        text: 'Key Strengths',
+                        heading: HeadingLevel.HEADING_2,
                         spacing: { before: 400, after: 200 }
                     }),
-                    ...extractedData.keyStrengths.split('•').filter(s => s.trim()).map(strength => 
-                        new docx.Paragraph({
-                            text: strength.trim(),
-                            bullet: { level: 0 },
-                            spacing: { after: 100 }
-                        })
-                    ),
-                    
-                    // Note about full details
-                    new docx.Paragraph({
-                        text: "\nFor complete details including Directors, Shareholding, Financials, and Debt Profile, please refer to the web interface.",
-                        italics: true,
-                        spacing: { before: 400 }
+
+                    new Paragraph({
+                        text: extractedData.keyStrengths || 'No key strengths available',
+                        spacing: { after: 400 }
+                    }),
+
+                    // About Company
+                    new Paragraph({
+                        text: 'About the Company',
+                        heading: HeadingLevel.HEADING_2,
+                        spacing: { before: 400, after: 200 }
+                    }),
+
+                    new Paragraph({
+                        text: extractedData.aboutCompany || 'No company information available',
+                        spacing: { after: 400 }
                     })
                 ]
             }]
         });
 
-        const blob = await docx.Packer.toBlob(doc);
-        saveAs(blob, `${extractedData.companyName.replace(/\s+/g, '_')}_Term_Loan_Teaser.docx`);
-        
-        alert('Document downloaded successfully!');
+        // Generate and download
+        const blob = await Packer.toBlob(doc);
+        const fileName = `${extractedData.companyName || 'Company'}_Term_Loan_Teaser.docx`;
+        saveAs(blob, fileName);
+
     } catch (error) {
         console.error('Error generating DOCX:', error);
         alert('Error generating document. Please try again.');
