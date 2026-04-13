@@ -14,16 +14,10 @@ function initializeUpload() {
     const uploadBtn = document.getElementById('uploadBtn');
     const uploadArea = document.getElementById('uploadArea');
 
-    // Button click
     uploadBtn.addEventListener('click', () => fileInput.click());
-    
-    // Upload area click
     uploadArea.addEventListener('click', () => fileInput.click());
-
-    // File selection
     fileInput.addEventListener('change', handleFileSelect);
 
-    // Drag and drop
     uploadArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadArea.classList.add('dragover');
@@ -43,7 +37,6 @@ function initializeUpload() {
         }
     });
 
-    // Download button
     document.getElementById('downloadBtn').addEventListener('click', generateDocx);
 }
 
@@ -57,7 +50,6 @@ function handleFileSelect(event) {
     document.getElementById('loadingIndicator').style.display = 'block';
     document.getElementById('dataSection').style.display = 'none';
 
-    // Read Excel file
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
@@ -81,7 +73,7 @@ function processExcelData(workbook) {
         const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
         console.log('Total rows:', jsonData.length);
-        console.log('First 10 rows:', jsonData.slice(0, 10));
+        console.log('Raw Excel Data:', jsonData);
 
         extractedData = {
             companyName: '',
@@ -101,120 +93,157 @@ function processExcelData(workbook) {
             debtProfile: getDefaultDebtData()
         };
 
-        // Parse data row by row
+        // Parse each row - data is in column B (index 1)
         for (let i = 0; i < jsonData.length; i++) {
             const row = jsonData[i];
-            if (!row || row.length < 3) continue;
+            if (!row || row.length < 2) continue;
 
-            const heading = row[1] ? String(row[1]).trim() : '';
-            const data = row[2] ? String(row[2]).trim() : '';
+            const cellB = row[1] ? String(row[1]).trim() : '';
+            const cellC = row[2] ? String(row[2]).trim() : '';
 
-            // Simple field extraction
-            if (heading === 'CIN NO') {
-                extractedData.cin = data;
-                console.log('CIN found:', data);
-            } else if (heading === 'PAN No') {
-                extractedData.pan = data;
-                console.log('PAN found:', data);
-            } else if (heading === 'Date of Incorporation') {
-                extractedData.incorporationDate = data;
-                console.log('Date found:', data);
-            } else if (heading === 'Registered and  Corporate  Office') {
-                extractedData.officeAddress = data;
-                console.log('Office found:', data);
-            } else if (heading === 'Line of Activity') {
-                extractedData.activity = data;
-                console.log('Activity found:', data);
-            } else if (heading === 'Rating') {
-                // Next row has the rating data
-                if (i + 1 < jsonData.length) {
-                    const ratingRow = jsonData[i + 1];
-                    if (ratingRow && ratingRow.length >= 4) {
+            console.log(`Row ${i}: CellB="${cellB.substring(0, 50)}..."`);
+
+            // Row 1: Company Name (skip, will get from About)
+            if (i === 1) continue;
+            
+            // Row 2: CIN
+            if (i === 2) {
+                extractedData.cin = cellB;
+                console.log('CIN:', cellB);
+            }
+            
+            // Row 3: PAN
+            if (i === 3) {
+                extractedData.pan = cellB;
+                console.log('PAN:', cellB);
+            }
+            
+            // Row 4: Date (Excel serial number)
+            if (i === 4) {
+                const dateNum = parseFloat(cellB);
+                if (!isNaN(dateNum)) {
+                    const date = new Date((dateNum - 25569) * 86400 * 1000);
+                    extractedData.incorporationDate = date.toISOString().split('T')[0];
+                } else {
+                    extractedData.incorporationDate = cellB;
+                }
+                console.log('Date:', extractedData.incorporationDate);
+            }
+            
+            // Row 5: Office Address
+            if (i === 5) {
+                extractedData.officeAddress = cellB;
+                console.log('Office:', cellB.substring(0, 50));
+            }
+            
+            // Row 6: Activity
+            if (i === 6) {
+                extractedData.activity = cellB;
+                console.log('Activity:', cellB);
+            }
+            
+            // Row 7: Rating (contains table with tabs and newlines)
+            if (i === 7) {
+                const lines = cellB.split('\n');
+                for (let j = 1; j < lines.length; j++) {
+                    const parts = lines[j].split('\t');
+                    if (parts.length >= 4) {
                         extractedData.rating.push({
-                            instrument: String(ratingRow[1] || '').trim(),
-                            amount: String(ratingRow[2] || '').trim(),
-                            rating: String(ratingRow[3] || '').trim(),
-                            action: String(ratingRow[4] || '').trim()
+                            instrument: parts[0].trim(),
+                            amount: parts[1].trim(),
+                            rating: parts[2].trim(),
+                            action: parts[3].trim()
                         });
-                        console.log('Rating found:', extractedData.rating[0]);
                     }
                 }
-            } else if (heading === 'Board of Directors') {
-                // Parse directors (next 7 rows)
-                for (let j = i + 2; j < i + 9 && j < jsonData.length; j++) {
-                    const dirRow = jsonData[j];
-                    if (dirRow && dirRow[1]) {
-                        const name = String(dirRow[1]).trim();
-                        if (name && (name.startsWith('Mr.') || name.startsWith('Ms.'))) {
-                            extractedData.directors.push({
-                                name: name,
-                                din: String(dirRow[2] || '').trim(),
-                                designation: String(dirRow[3] || '').trim()
-                            });
-                        }
+                console.log('Rating:', extractedData.rating);
+            }
+            
+            // Row 8: Board of Directors (contains table)
+            if (i === 8) {
+                const lines = cellB.split('\n');
+                for (let j = 1; j < lines.length; j++) {
+                    const parts = lines[j].split('\t');
+                    if (parts.length >= 3) {
+                        extractedData.directors.push({
+                            name: parts[0].trim(),
+                            din: parts[1].trim(),
+                            designation: parts[2].trim()
+                        });
                     }
                 }
-                console.log('Directors found:', extractedData.directors.length);
-            } else if (heading === 'Shareholding Pattern') {
-                // Parse shareholding (next 8 rows)
-                for (let j = i + 2; j < i + 10 && j < jsonData.length; j++) {
-                    const shRow = jsonData[j];
-                    if (shRow && shRow[1]) {
-                        const category = String(shRow[1]).trim();
-                        if (category && category !== 'TOTAL') {
-                            extractedData.shareholding.push({
-                                category: category,
-                                shares: String(shRow[2] || '').trim(),
-                                percentage: String(shRow[3] || '').trim()
-                            });
-                        }
+                console.log('Directors:', extractedData.directors.length);
+            }
+            
+            // Row 9: Shareholding Pattern (contains table)
+            if (i === 9) {
+                const lines = cellB.split('\n');
+                for (let j = 1; j < lines.length; j++) {
+                    const parts = lines[j].split('\t');
+                    if (parts.length >= 3 && !lines[j].includes('TOTAL')) {
+                        extractedData.shareholding.push({
+                            category: parts[0].trim(),
+                            shares: parts[1].trim(),
+                            percentage: parts[2].trim()
+                        });
                     }
                 }
-                console.log('Shareholding found:', extractedData.shareholding.length);
-            } else if (heading === 'Key Strengths') {
-                extractedData.keyStrengths = data;
+                console.log('Shareholding:', extractedData.shareholding.length);
+            }
+            
+            // Row 10: Key Strengths
+            if (i === 10) {
+                extractedData.keyStrengths = cellB;
                 console.log('Key Strengths found');
-            } else if (heading === 'About the Company') {
-                extractedData.aboutCompany = data;
+            }
+            
+            // Row 11: About the Company
+            if (i === 11) {
+                extractedData.aboutCompany = cellB;
                 // Extract company name
-                if (data && data.includes('(')) {
-                    extractedData.companyName = data.split('(')[0].trim();
-                    console.log('Company name extracted:', extractedData.companyName);
+                if (cellB.includes('(')) {
+                    extractedData.companyName = cellB.split('(')[0].trim();
                 }
-            } else if (heading === 'Director & Promoter Profile') {
-                extractedData.directorProfiles = data;
-            } else if (heading.includes('Financials')) {
-                // Parse financials
-                if (i + 1 < jsonData.length) {
-                    const headerRow = jsonData[i + 1];
-                    // Get year headers
-                    for (let j = 2; j < headerRow.length && j < 6; j++) {
-                        if (headerRow[j]) {
-                            extractedData.financials.headers.push(String(headerRow[j]).trim());
+                console.log('Company Name:', extractedData.companyName);
+            }
+            
+            // Row 12: Director Profiles
+            if (i === 12) {
+                extractedData.directorProfiles = cellB;
+                console.log('Director Profiles found');
+            }
+            
+            // Row 13: Financials (contains table)
+            if (i === 13) {
+                const lines = cellB.split('\n');
+                if (lines.length > 0) {
+                    // First line has headers
+                    const headerParts = lines[0].split('\t');
+                    for (let j = 1; j < headerParts.length; j++) {
+                        if (headerParts[j]) {
+                            extractedData.financials.headers.push(headerParts[j].trim());
                         }
                     }
                     
-                    // Parse financial rows
-                    for (let j = i + 2; j < i + 25 && j < jsonData.length; j++) {
-                        const finRow = jsonData[j];
-                        if (finRow && finRow[1]) {
-                            const particular = String(finRow[1]).trim();
-                            if (particular && particular !== 'Particulars') {
+                    // Remaining lines have data
+                    for (let j = 1; j < lines.length; j++) {
+                        const parts = lines[j].split('\t');
+                        if (parts.length > 1) {
+                            const particular = parts[0].trim();
+                            if (particular) {
                                 extractedData.financials.data[particular] = {};
                                 for (let k = 0; k < extractedData.financials.headers.length; k++) {
-                                    extractedData.financials.data[particular][extractedData.financials.headers[k]] = String(finRow[k + 2] || '').trim();
+                                    extractedData.financials.data[particular][extractedData.financials.headers[k]] = parts[k + 1] || '';
                                 }
                             }
                         }
                     }
-                    console.log('Financials found:', Object.keys(extractedData.financials.data).length, 'rows');
                 }
+                console.log('Financials:', Object.keys(extractedData.financials.data).length, 'rows');
             }
         }
 
-        console.log('Final extracted data:', extractedData);
-
-        // Display data
+        console.log('Extracted Data:', extractedData);
         displayData();
     } catch (error) {
         console.error('Error processing Excel:', error);
@@ -301,20 +330,16 @@ function displayCompanyInfo() {
 
 // Display metrics
 function displayMetrics() {
-    // Rating
     const ratingValue = extractedData.rating.length > 0 ? extractedData.rating[0].rating : 'N/A';
     document.getElementById('ratingValue').textContent = ratingValue;
 
-    // Directors count
     document.getElementById('directorsCount').textContent = extractedData.directors.length;
 
-    // Net Worth
     const tnw = extractedData.financials.data['TNW'];
     const netWorth = tnw && extractedData.financials.headers.length > 0 ? 
         tnw[extractedData.financials.headers[extractedData.financials.headers.length - 1]] : 'N/A';
     document.getElementById('netWorth').textContent = netWorth ? `₹${netWorth} Cr` : 'N/A';
 
-    // Total Debt
     const totalDebt = calculateTotalDebt();
     document.getElementById('totalDebt').textContent = `₹${totalDebt.toFixed(2)} Cr`;
     
@@ -361,8 +386,8 @@ function displayFinancialChart() {
         const tnw = extractedData.financials.data['TNW'];
         const pat = extractedData.financials.data['Profit After Tax'];
         
-        if (tnw) tnwData.push(parseFloat(tnw[year]) || 0);
-        if (pat) patData.push(parseFloat(pat[year]) || 0);
+        if (tnw) tnwData.push(parseFloat(tnw[year].replace(/,/g, '')) || 0);
+        if (pat) patData.push(parseFloat(pat[year].replace(/,/g, '')) || 0);
     });
 
     charts.financial = new Chart(ctx, {
@@ -523,7 +548,6 @@ function displayDebtChart() {
 
 // Display tables
 function displayTables() {
-    // Directors table
     const directorsTable = document.getElementById('directorsTable');
     let directorsHTML = `
         <thead>
@@ -553,7 +577,6 @@ function displayTables() {
     directorsHTML += '</tbody>';
     directorsTable.innerHTML = directorsHTML;
 
-    // Shareholding table
     const shareholdingTable = document.getElementById('shareholdingTable');
     let shareholdingHTML = `
         <thead>
@@ -667,7 +690,7 @@ function displayDebtProfile() {
     console.log('Debt profile displayed');
 }
 
-// Generate DOCX - Simplified version
+// Generate DOCX - Simple text file
 function generateDocx() {
     if (!extractedData) {
         alert('Please upload and process an Excel file first.');
@@ -675,9 +698,8 @@ function generateDocx() {
     }
 
     try {
-        console.log('Generating DOCX...');
+        console.log('Generating document...');
         
-        // Create simple text content
         let content = `TERM LOAN TEASER\n\n`;
         content += `${extractedData.companyName || 'Company Name'}\n\n`;
         content += `COMPANY INFORMATION\n`;
@@ -698,13 +720,11 @@ function generateDocx() {
             content += `${dir.name} - ${dir.designation}\n`;
         });
         
-        // Create blob and download
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const fileName = `${extractedData.companyName || 'Company'}_Term_Loan_Teaser.txt`;
         saveAs(blob, fileName);
         
         console.log('Document generated successfully');
-        alert('Document downloaded as text file. For DOCX format, please use the Python script.');
 
     } catch (error) {
         console.error('Error generating document:', error);
