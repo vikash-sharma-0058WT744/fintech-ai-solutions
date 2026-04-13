@@ -382,6 +382,49 @@ body {
     gap: 25px;
 }
 
+.debt-table-container {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.debt-table-container h3 {
+    background: var(--primary-color);
+    color: var(--white);
+    padding: 12px 20px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.debt-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.debt-table th,
+.debt-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.debt-table th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+    font-size: 0.95rem;
+}
+
+.debt-table tbody tr:hover {
+    background: #f9fafb;
+}
+
+.debt-table tr:last-child td {
+    border-bottom: none;
+}
+
 .debt-category {
     border: 1px solid #e5e7eb;
     border-radius: 8px;
