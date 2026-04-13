@@ -4,6 +4,7 @@ let charts = {};
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('App initialized');
     initializeUpload();
 });
 
@@ -12,7 +13,6 @@ function initializeUpload() {
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
     const uploadArea = document.getElementById('uploadArea');
-    const fileName = document.getElementById('fileName');
 
     // Button click
     uploadBtn.addEventListener('click', () => fileInput.click());
@@ -52,6 +52,7 @@ function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    console.log('File selected:', file.name);
     document.getElementById('fileName').textContent = `Selected: ${file.name}`;
     document.getElementById('loadingIndicator').style.display = 'block';
     document.getElementById('dataSection').style.display = 'none';
@@ -62,10 +63,11 @@ function handleFileSelect(event) {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
+            console.log('Workbook loaded:', workbook.SheetNames);
             processExcelData(workbook);
         } catch (error) {
             console.error('Error reading file:', error);
-            alert('Error reading Excel file. Please ensure it\'s a valid .xlsx file.');
+            alert('Error reading Excel file: ' + error.message);
             document.getElementById('loadingIndicator').style.display = 'none';
         }
     };
@@ -74,180 +76,151 @@ function handleFileSelect(event) {
 
 // Process Excel data
 function processExcelData(workbook) {
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    try {
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    console.log('Raw Excel Data:', jsonData);
+        console.log('Total rows:', jsonData.length);
+        console.log('First 10 rows:', jsonData.slice(0, 10));
 
-    extractedData = {
-        companyName: '',
-        cin: '',
-        pan: '',
-        lei: '335800LYXG6JYBGK1K19',
-        incorporationDate: '',
-        officeAddress: '',
-        activity: '',
-        rating: [],
-        directors: [],
-        shareholding: [],
-        keyStrengths: '',
-        aboutCompany: '',
-        directorProfiles: '',
-        financials: { headers: [], data: {} },
-        debtProfile: getDefaultDebtData()
-    };
+        extractedData = {
+            companyName: '',
+            cin: '',
+            pan: '',
+            lei: '335800LYXG6JYBGK1K19',
+            incorporationDate: '',
+            officeAddress: '',
+            activity: '',
+            rating: [],
+            directors: [],
+            shareholding: [],
+            keyStrengths: '',
+            aboutCompany: '',
+            directorProfiles: '',
+            financials: { headers: [], data: {} },
+            debtProfile: getDefaultDebtData()
+        };
 
-    // Parse data (Column B = headings, Column C = data)
-    let currentSection = '';
-    let i = 0;
-    
-    while (i < jsonData.length) {
-        const row = jsonData[i];
-        const heading = row[1] ? String(row[1]).trim() : '';
-        const data = row[2] ? String(row[2]).trim() : '';
+        // Parse data row by row
+        for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || row.length < 3) continue;
 
-        console.log(`Row ${i}: Heading="${heading}", Data="${data}"`);
+            const heading = row[1] ? String(row[1]).trim() : '';
+            const data = row[2] ? String(row[2]).trim() : '';
 
-        if (heading === 'Applicant Company') {
-            currentSection = 'company';
-            i++;
-        } else if (heading === 'CIN NO') {
-            extractedData.cin = data;
-            i++;
-        } else if (heading === 'PAN No') {
-            extractedData.pan = data;
-            i++;
-        } else if (heading === 'Date of Incorporation') {
-            extractedData.incorporationDate = formatDate(data);
-            i++;
-        } else if (heading === 'Registered and  Corporate  Office') {
-            extractedData.officeAddress = data;
-            i++;
-        } else if (heading === 'Line of Activity') {
-            extractedData.activity = data;
-            i++;
-        } else if (heading === 'Rating') {
-            currentSection = 'rating';
-            i++;
-            // Parse rating rows
-            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
-                const ratingRow = jsonData[i];
-                if (ratingRow[1] && String(ratingRow[1]).includes('Long Term')) {
-                    extractedData.rating.push({
-                        instrument: String(ratingRow[1] || '').trim(),
-                        amount: String(ratingRow[2] || '').trim(),
-                        rating: String(ratingRow[3] || '').trim(),
-                        action: String(ratingRow[4] || '').trim()
-                    });
-                }
-                i++;
-            }
-        } else if (heading === 'Board of Directors') {
-            currentSection = 'directors';
-            i++;
-            // Parse director rows
-            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
-                const dirRow = jsonData[i];
-                const name = String(dirRow[1] || '').trim();
-                if (name && (name.startsWith('Mr.') || name.startsWith('Ms.'))) {
-                    extractedData.directors.push({
-                        name: name,
-                        din: String(dirRow[2] || '').trim(),
-                        designation: String(dirRow[3] || '').trim()
-                    });
-                }
-                i++;
-            }
-        } else if (heading === 'Shareholding Pattern') {
-            currentSection = 'shareholding';
-            i++;
-            // Parse shareholding rows
-            while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
-                const shRow = jsonData[i];
-                const category = String(shRow[1] || '').trim();
-                if (category && category !== 'Category of Shareholder' && category !== 'TOTAL') {
-                    extractedData.shareholding.push({
-                        category: category,
-                        shares: String(shRow[2] || '').trim(),
-                        percentage: String(shRow[3] || '').trim()
-                    });
-                }
-                i++;
-            }
-        } else if (heading === 'Key Strengths') {
-            extractedData.keyStrengths = data;
-            i++;
-        } else if (heading === 'About the Company') {
-            extractedData.aboutCompany = data;
-            // Extract company name from about section
-            if (data && data.includes('(')) {
-                extractedData.companyName = data.split('(')[0].trim();
-            }
-            i++;
-        } else if (heading === 'Director & Promoter Profile') {
-            extractedData.directorProfiles = data;
-            i++;
-        } else if (heading.includes('Financials')) {
-            currentSection = 'financials';
-            i++;
-            // Parse financial data
-            if (i < jsonData.length) {
-                const headerRow = jsonData[i];
-                // Extract year headers (FY 22, FY 23, etc.)
-                for (let j = 2; j < headerRow.length; j++) {
-                    if (headerRow[j]) {
-                        extractedData.financials.headers.push(String(headerRow[j]).trim());
+            // Simple field extraction
+            if (heading === 'CIN NO') {
+                extractedData.cin = data;
+                console.log('CIN found:', data);
+            } else if (heading === 'PAN No') {
+                extractedData.pan = data;
+                console.log('PAN found:', data);
+            } else if (heading === 'Date of Incorporation') {
+                extractedData.incorporationDate = data;
+                console.log('Date found:', data);
+            } else if (heading === 'Registered and  Corporate  Office') {
+                extractedData.officeAddress = data;
+                console.log('Office found:', data);
+            } else if (heading === 'Line of Activity') {
+                extractedData.activity = data;
+                console.log('Activity found:', data);
+            } else if (heading === 'Rating') {
+                // Next row has the rating data
+                if (i + 1 < jsonData.length) {
+                    const ratingRow = jsonData[i + 1];
+                    if (ratingRow && ratingRow.length >= 4) {
+                        extractedData.rating.push({
+                            instrument: String(ratingRow[1] || '').trim(),
+                            amount: String(ratingRow[2] || '').trim(),
+                            rating: String(ratingRow[3] || '').trim(),
+                            action: String(ratingRow[4] || '').trim()
+                        });
+                        console.log('Rating found:', extractedData.rating[0]);
                     }
                 }
-                i++;
-                
-                // Parse financial rows
-                while (i < jsonData.length && jsonData[i][1] !== undefined && String(jsonData[i][1]).trim() !== '' && !isNewSection(jsonData[i][1])) {
-                    const finRow = jsonData[i];
-                    const particular = String(finRow[1] || '').trim();
-                    if (particular && particular !== 'Particulars') {
-                        extractedData.financials.data[particular] = {};
-                        for (let j = 0; j < extractedData.financials.headers.length; j++) {
-                            extractedData.financials.data[particular][extractedData.financials.headers[j]] = String(finRow[j + 2] || '').trim();
+            } else if (heading === 'Board of Directors') {
+                // Parse directors (next 7 rows)
+                for (let j = i + 2; j < i + 9 && j < jsonData.length; j++) {
+                    const dirRow = jsonData[j];
+                    if (dirRow && dirRow[1]) {
+                        const name = String(dirRow[1]).trim();
+                        if (name && (name.startsWith('Mr.') || name.startsWith('Ms.'))) {
+                            extractedData.directors.push({
+                                name: name,
+                                din: String(dirRow[2] || '').trim(),
+                                designation: String(dirRow[3] || '').trim()
+                            });
                         }
                     }
-                    i++;
+                }
+                console.log('Directors found:', extractedData.directors.length);
+            } else if (heading === 'Shareholding Pattern') {
+                // Parse shareholding (next 8 rows)
+                for (let j = i + 2; j < i + 10 && j < jsonData.length; j++) {
+                    const shRow = jsonData[j];
+                    if (shRow && shRow[1]) {
+                        const category = String(shRow[1]).trim();
+                        if (category && category !== 'TOTAL') {
+                            extractedData.shareholding.push({
+                                category: category,
+                                shares: String(shRow[2] || '').trim(),
+                                percentage: String(shRow[3] || '').trim()
+                            });
+                        }
+                    }
+                }
+                console.log('Shareholding found:', extractedData.shareholding.length);
+            } else if (heading === 'Key Strengths') {
+                extractedData.keyStrengths = data;
+                console.log('Key Strengths found');
+            } else if (heading === 'About the Company') {
+                extractedData.aboutCompany = data;
+                // Extract company name
+                if (data && data.includes('(')) {
+                    extractedData.companyName = data.split('(')[0].trim();
+                    console.log('Company name extracted:', extractedData.companyName);
+                }
+            } else if (heading === 'Director & Promoter Profile') {
+                extractedData.directorProfiles = data;
+            } else if (heading.includes('Financials')) {
+                // Parse financials
+                if (i + 1 < jsonData.length) {
+                    const headerRow = jsonData[i + 1];
+                    // Get year headers
+                    for (let j = 2; j < headerRow.length && j < 6; j++) {
+                        if (headerRow[j]) {
+                            extractedData.financials.headers.push(String(headerRow[j]).trim());
+                        }
+                    }
+                    
+                    // Parse financial rows
+                    for (let j = i + 2; j < i + 25 && j < jsonData.length; j++) {
+                        const finRow = jsonData[j];
+                        if (finRow && finRow[1]) {
+                            const particular = String(finRow[1]).trim();
+                            if (particular && particular !== 'Particulars') {
+                                extractedData.financials.data[particular] = {};
+                                for (let k = 0; k < extractedData.financials.headers.length; k++) {
+                                    extractedData.financials.data[particular][extractedData.financials.headers[k]] = String(finRow[k + 2] || '').trim();
+                                }
+                            }
+                        }
+                    }
+                    console.log('Financials found:', Object.keys(extractedData.financials.data).length, 'rows');
                 }
             }
-        } else {
-            i++;
         }
+
+        console.log('Final extracted data:', extractedData);
+
+        // Display data
+        displayData();
+    } catch (error) {
+        console.error('Error processing Excel:', error);
+        alert('Error processing data: ' + error.message);
+        document.getElementById('loadingIndicator').style.display = 'none';
     }
-
-    console.log('Extracted Data:', extractedData);
-
-    // Display data
-    displayData();
-}
-
-// Check if a heading is a new section
-function isNewSection(heading) {
-    const sections = [
-        'Applicant Company', 'CIN NO', 'PAN No', 'Date of Incorporation',
-        'Registered and  Corporate  Office', 'Line of Activity', 'Rating',
-        'Board of Directors', 'Shareholding Pattern', 'Key Strengths',
-        'About the Company', 'Director & Promoter Profile', 'Financials',
-        'Portfolio Cuts', 'Debt Profile'
-    ];
-    const headingStr = String(heading).trim();
-    return sections.some(section => headingStr.includes(section));
-}
-
-// Format date
-function formatDate(date) {
-    if (!date) return '';
-    if (typeof date === 'string') {
-        if (date.includes('00:00:00')) {
-            return date.split(' ')[0];
-        }
-        return date;
-    }
-    return String(date);
 }
 
 // Get default debt data
@@ -258,23 +231,15 @@ function getDefaultDebtData() {
             { lender: 'BANK OF MAHARASHTRA', sanctioned: '450.00', outstanding: '337.33' },
             { lender: 'HDFC BANK LIMITED', sanctioned: '660.00', outstanding: '312.02' },
             { lender: 'BANDHAN BANK', sanctioned: '355.00', outstanding: '292.00' },
-            { lender: 'THE FEDERAL BANK LIMITED', sanctioned: '425.00', outstanding: '281.99' },
-            { lender: 'BANK OF BARODA', sanctioned: '250.00', outstanding: '218.46' },
-            { lender: 'KOTAK BANK LIMITED', sanctioned: '375.00', outstanding: '207.49' },
-            { lender: 'Canara Bank', sanctioned: '225.00', outstanding: '174.21' },
-            { lender: 'BAJAJ FINANCE LIMITED', sanctioned: '250.00', outstanding: '170.46' },
-            { lender: 'RBL BANK LIMITED', sanctioned: '225.00', outstanding: '160.52' }
+            { lender: 'THE FEDERAL BANK LIMITED', sanctioned: '425.00', outstanding: '281.99' }
         ],
         ptc: [
             { lender: 'Indusind Bank Limited', sanctioned: '265.96', outstanding: '234.87' },
-            { lender: 'Axis Bank Limited', sanctioned: '114.88', outstanding: '96.14' },
-            { lender: 'ICICI Bank Limited', sanctioned: '115.28', outstanding: '57.21' }
+            { lender: 'Axis Bank Limited', sanctioned: '114.88', outstanding: '96.14' }
         ],
         da: [
             { lender: 'State Bank of India', sanctioned: '889.80', outstanding: '631.91' },
-            { lender: 'DBS Bank', sanctioned: '278.75', outstanding: '220.56' },
-            { lender: 'INDIAN BANK', sanctioned: '171.86', outstanding: '83.96' },
-            { lender: 'Bank of Baroda', sanctioned: '195.82', outstanding: '62.02' }
+            { lender: 'DBS Bank', sanctioned: '278.75', outstanding: '220.56' }
         ],
         nhb: [
             { lender: 'National Housing Bank', sanctioned: '1540.00', outstanding: '900.13' }
@@ -290,25 +255,15 @@ function getDefaultDebtData() {
 
 // Display data
 function displayData() {
+    console.log('Displaying data...');
     document.getElementById('loadingIndicator').style.display = 'none';
     document.getElementById('dataSection').style.display = 'block';
 
-    // Company info
     displayCompanyInfo();
-    
-    // Metrics
     displayMetrics();
-    
-    // Charts
     displayCharts();
-    
-    // Tables
     displayTables();
-    
-    // Key Strengths
     displayKeyStrengths();
-    
-    // Debt Profile
     displayDebtProfile();
 }
 
@@ -341,6 +296,7 @@ function displayCompanyInfo() {
             <div class="info-value">${extractedData.activity || 'N/A'}</div>
         </div>
     `;
+    console.log('Company info displayed');
 }
 
 // Display metrics
@@ -352,7 +308,7 @@ function displayMetrics() {
     // Directors count
     document.getElementById('directorsCount').textContent = extractedData.directors.length;
 
-    // Net Worth (from financials FY25)
+    // Net Worth
     const tnw = extractedData.financials.data['TNW'];
     const netWorth = tnw && extractedData.financials.headers.length > 0 ? 
         tnw[extractedData.financials.headers[extractedData.financials.headers.length - 1]] : 'N/A';
@@ -361,6 +317,8 @@ function displayMetrics() {
     // Total Debt
     const totalDebt = calculateTotalDebt();
     document.getElementById('totalDebt').textContent = `₹${totalDebt.toFixed(2)} Cr`;
+    
+    console.log('Metrics displayed');
 }
 
 // Calculate total debt
@@ -385,11 +343,13 @@ function displayCharts() {
     displayFinancialChart();
     displayShareholdingChart();
     displayDebtChart();
+    console.log('Charts displayed');
 }
 
 // Display financial chart
 function displayFinancialChart() {
-    const ctx = document.getElementById('financialChart').getContext('2d');
+    const ctx = document.getElementById('financialChart');
+    if (!ctx) return;
     
     if (charts.financial) charts.financial.destroy();
 
@@ -437,12 +397,6 @@ function displayFinancialChart() {
                         text: 'Amount (in Crores)'
                     }
                 }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                }
             }
         }
     });
@@ -450,7 +404,8 @@ function displayFinancialChart() {
 
 // Display shareholding chart
 function displayShareholdingChart() {
-    const ctx = document.getElementById('shareholdingChart').getContext('2d');
+    const ctx = document.getElementById('shareholdingChart');
+    if (!ctx) return;
     
     if (charts.shareholding) charts.shareholding.destroy();
 
@@ -502,7 +457,8 @@ function displayShareholdingChart() {
 
 // Display debt chart
 function displayDebtChart() {
-    const ctx = document.getElementById('debtChart').getContext('2d');
+    const ctx = document.getElementById('debtChart');
+    if (!ctx) return;
     
     if (charts.debt) charts.debt.destroy();
 
@@ -560,12 +516,6 @@ function displayDebtChart() {
                         text: 'Amount (in Crores)'
                     }
                 }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                }
             }
         }
     });
@@ -587,11 +537,7 @@ function displayTables() {
     `;
     
     if (extractedData.directors.length === 0) {
-        directorsHTML += `
-            <tr>
-                <td colspan="3" style="text-align: center;">No director data available</td>
-            </tr>
-        `;
+        directorsHTML += `<tr><td colspan="3" style="text-align: center;">No director data available</td></tr>`;
     } else {
         extractedData.directors.forEach(director => {
             directorsHTML += `
@@ -621,11 +567,7 @@ function displayTables() {
     `;
     
     if (extractedData.shareholding.length === 0) {
-        shareholdingHTML += `
-            <tr>
-                <td colspan="3" style="text-align: center;">No shareholding data available</td>
-            </tr>
-        `;
+        shareholdingHTML += `<tr><td colspan="3" style="text-align: center;">No shareholding data available</td></tr>`;
     } else {
         extractedData.shareholding.forEach(sh => {
             shareholdingHTML += `
@@ -640,6 +582,8 @@ function displayTables() {
     
     shareholdingHTML += '</tbody>';
     shareholdingTable.innerHTML = shareholdingHTML;
+    
+    console.log('Tables displayed');
 }
 
 // Display key strengths
@@ -666,6 +610,7 @@ function displayKeyStrengths() {
     });
     
     strengthsDiv.innerHTML = html || '<p>No key strengths data available</p>';
+    console.log('Key strengths displayed');
 }
 
 // Display debt profile
@@ -719,121 +664,51 @@ function displayDebtProfile() {
     });
     
     debtTablesDiv.innerHTML = html;
+    console.log('Debt profile displayed');
 }
 
-// Generate DOCX
-async function generateDocx() {
+// Generate DOCX - Simplified version
+function generateDocx() {
     if (!extractedData) {
         alert('Please upload and process an Excel file first.');
         return;
     }
 
     try {
-        const { Document, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } = docx;
-
-        // Create document
-        const doc = new Document({
-            sections: [{
-                properties: {},
-                children: [
-                    // Title
-                    new Paragraph({
-                        text: 'Term Loan Teaser',
-                        heading: HeadingLevel.HEADING_1,
-                        alignment: AlignmentType.CENTER,
-                        spacing: { after: 400 }
-                    }),
-
-                    // Company Name
-                    new Paragraph({
-                        text: extractedData.companyName || 'Company Name',
-                        heading: HeadingLevel.HEADING_2,
-                        alignment: AlignmentType.CENTER,
-                        spacing: { after: 400 }
-                    }),
-
-                    // Company Information
-                    new Paragraph({
-                        text: 'Company Information',
-                        heading: HeadingLevel.HEADING_2,
-                        spacing: { before: 400, after: 200 }
-                    }),
-
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: 'CIN: ', bold: true }),
-                            new TextRun(extractedData.cin || 'N/A')
-                        ],
-                        spacing: { after: 100 }
-                    }),
-
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: 'PAN: ', bold: true }),
-                            new TextRun(extractedData.pan || 'N/A')
-                        ],
-                        spacing: { after: 100 }
-                    }),
-
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: 'Date of Incorporation: ', bold: true }),
-                            new TextRun(extractedData.incorporationDate || 'N/A')
-                        ],
-                        spacing: { after: 100 }
-                    }),
-
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: 'Line of Activity: ', bold: true }),
-                            new TextRun(extractedData.activity || 'N/A')
-                        ],
-                        spacing: { after: 100 }
-                    }),
-
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: 'Rating: ', bold: true }),
-                            new TextRun(extractedData.rating.length > 0 ? extractedData.rating[0].rating : 'N/A')
-                        ],
-                        spacing: { after: 400 }
-                    }),
-
-                    // Key Strengths
-                    new Paragraph({
-                        text: 'Key Strengths',
-                        heading: HeadingLevel.HEADING_2,
-                        spacing: { before: 400, after: 200 }
-                    }),
-
-                    new Paragraph({
-                        text: extractedData.keyStrengths || 'No key strengths available',
-                        spacing: { after: 400 }
-                    }),
-
-                    // About Company
-                    new Paragraph({
-                        text: 'About the Company',
-                        heading: HeadingLevel.HEADING_2,
-                        spacing: { before: 400, after: 200 }
-                    }),
-
-                    new Paragraph({
-                        text: extractedData.aboutCompany || 'No company information available',
-                        spacing: { after: 400 }
-                    })
-                ]
-            }]
+        console.log('Generating DOCX...');
+        
+        // Create simple text content
+        let content = `TERM LOAN TEASER\n\n`;
+        content += `${extractedData.companyName || 'Company Name'}\n\n`;
+        content += `COMPANY INFORMATION\n`;
+        content += `CIN: ${extractedData.cin || 'N/A'}\n`;
+        content += `PAN: ${extractedData.pan || 'N/A'}\n`;
+        content += `Date of Incorporation: ${extractedData.incorporationDate || 'N/A'}\n`;
+        content += `Line of Activity: ${extractedData.activity || 'N/A'}\n`;
+        content += `Rating: ${extractedData.rating.length > 0 ? extractedData.rating[0].rating : 'N/A'}\n\n`;
+        
+        content += `KEY STRENGTHS\n`;
+        content += `${extractedData.keyStrengths || 'No key strengths available'}\n\n`;
+        
+        content += `ABOUT THE COMPANY\n`;
+        content += `${extractedData.aboutCompany || 'No company information available'}\n\n`;
+        
+        content += `BOARD OF DIRECTORS\n`;
+        extractedData.directors.forEach(dir => {
+            content += `${dir.name} - ${dir.designation}\n`;
         });
-
-        // Generate and download
-        const blob = await Packer.toBlob(doc);
-        const fileName = `${extractedData.companyName || 'Company'}_Term_Loan_Teaser.docx`;
+        
+        // Create blob and download
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const fileName = `${extractedData.companyName || 'Company'}_Term_Loan_Teaser.txt`;
         saveAs(blob, fileName);
+        
+        console.log('Document generated successfully');
+        alert('Document downloaded as text file. For DOCX format, please use the Python script.');
 
     } catch (error) {
-        console.error('Error generating DOCX:', error);
-        alert('Error generating document. Please try again.');
+        console.error('Error generating document:', error);
+        alert('Error generating document: ' + error.message);
     }
 }
 
